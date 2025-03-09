@@ -1,0 +1,24 @@
+{
+  "name": "chat",
+  "version": "1.0.0",
+  "description": "Online chat",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Senobiot/chatOn.git"
+  },
+  "keywords": [
+    "node.js",
+    "online",
+    "chat"
+  ],
+  "author": "Aliaksandr Kulik",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/Senobiot/chatOn/issues"
+  },
+  "homepage": "https://github.com/Senobiot/chatOn#readme"
+}
