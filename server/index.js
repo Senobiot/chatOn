@@ -1,47 +1,70 @@
 require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const { Server } = require("socket.io");
-const { createServer } = require("node:http");
-const chatRouter = require("./router/chat");
+const ws = require("ws");
 
-const corsOptions = {
-  origin: process.env.REACT_APP_URL,
-  methods: ["GET", "POST"],
-};
+const connectedUsers = new Map();
 
-const app = express();
-app.use(cors(corsOptions));
-const server = createServer(app);
-const io = new Server(server, {
-  cors: corsOptions,
-});
+const server = new ws.Server({ port: process.env.SERVER_PORT }, () =>
+  console.log(`WebSocket server starts at port:${process.env.SERVER_PORT}`)
+);
 
-app.use("/chat", chatRouter);
-io.on("connection", (socket) => {
-  console.log("user connected");
+function broadcast(message) {
+  server.clients.forEach((client) => {
+    if (client.readyState === ws.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
 
-  socket.on("message", (msg) => {
-    console.log("Message received: ", msg);
-    io.emit("message", msg);
+server.on("connection", (webSocket) => {
+  webSocket.on("message", (dto) => {
+    try {
+      const { message, event, username } = JSON.parse(dto);
+
+      switch (event) {
+        case "message":
+          broadcast({ message, event, username });
+          break;
+
+        case "connect":
+          connectedUsers.set(webSocket, username);
+          broadcast({
+            currentUsers: Array.from(connectedUsers.values()),
+            event,
+            message: `User ${username} has entered in chat!`,
+          });
+          break;
+
+        case "disconnect":
+          connectedUsers.delete(username);
+          broadcast({
+            currentUsers: Array.from(connectedUsers.values()),
+            event,
+            message: `User ${username} has left the chat!`,
+          });
+        default:
+          console.warn("Unknown event:");
+          break;
+      }
+    } catch (error) {
+      console.log(error);
+    }
   });
 
-  socket.on("disconnect", () => {
-    console.log("user disconnected");
+  webSocket.on("close", () => {
+    let username;
+    for (const [key, value] of connectedUsers.entries()) {
+      if (key === webSocket) {
+        username = value;
+        connectedUsers.delete(key);
+      }
+    }
+
+    if (username) {
+      broadcast({
+        currentUsers: Array.from(connectedUsers.values()),
+        event: "disconnect",
+        message: `User ${username} has left the chat.`,
+      });
+    }
   });
 });
-
-const start = async () => {
-  try {
-    server.listen(process.env.SERVER_PORT, () => {
-      console.log(`server starts at port ${process.env.SERVER_PORT}`);
-    });
-  } catch (error) {
-    console.log(error);
-  }
-};
-start();
-
-// server.listen(3000, () => {
-//   console.log('server running at http://localhost:3000');
-// });
