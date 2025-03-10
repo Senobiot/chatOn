@@ -43,7 +43,12 @@
       #chat-users {
         width: 20%;
       }
-
+      #chat-users div:not(:first-child) {
+        border: solid 3px #cecece;
+        text-align: left;
+        margin: 3px;
+        padding: 1px 10px;
+      }
       #chat-users h3 {
         margin: 0;
         text-align: left;
@@ -99,30 +104,28 @@
       <header>
         <h1>Welcome to Online Chat</h1>
       </header>
-      <!-- <div class="chat-wrapper">
-        <div id="chat-window"></div>
-        <div id="chat-users"><h3>Users:</h3></div>
-      </div>
-      <div style="margin-top: 15px">
-        <input type="text" placeholder="Type your message..." />
-        <button id="send">Send</button>
-      </div> -->
     </div>
     <footer>
       <p>© 2025 WebSocket Online Chat</p>
     </footer>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-    <script type="module">
-      import { SERVER_URL, EVENTS } from "../constants/index.js";
-
+    <script>
+      const SERVER_URL = "ws://localhost:3000";
+      const EVENTS = {
+        message: "message",
+        connect: "connect",
+        disconnect: "disconnect",
+      };
       const chat = {
         socket: null,
         message: "",
         chatWindow: null,
+        chatUsers: [],
         nameWrapper: null,
+        username: null,
       };
-
       const wrapper = document.getElementById("wrapper");
+
       const elemCreator = (tag, options = {}) => {
         const { id, cls, content, style } = options;
         const element = document.createElement(tag);
@@ -142,11 +145,16 @@
         children.forEach((child) => parent.appendChild(child));
       };
 
+      const send = (event, username, message) => {
+        return chat.socket.send(JSON.stringify({ event, username, message }));
+      };
+
       const createUI = () => {
         const chatWrapper = elemCreator("div", { cls: "chat-wrapper" });
         const chatWindow = elemCreator("div", { id: "chat-window" });
         chat.chatWindow = chatWindow;
         const chatUsers = elemCreator("div", { id: "chat-users" });
+        chat.chatUsers = chatUsers;
         const chatUsersTitle = elemCreator("h3", { content: "Users" });
 
         const controlsWrapper = elemCreator("div", {
@@ -154,6 +162,15 @@
         });
         const messageInput = elemCreator("input", { content: "Enter message" });
         const sendBtn = elemCreator("button", { content: "SEND" });
+        sendBtn.addEventListener("click", () => {
+          const message = messageInput.value.trim();
+          if (!message) {
+            alert("Message cannot be empty!");
+            return;
+          }
+          send(EVENTS.message, chat.username, message);
+          messageInput.value = "";
+        });
 
         chat.message = messageInput;
         chat.sendButton = sendBtn;
@@ -165,66 +182,68 @@
         appendChildren(wrapper, chatWrapper, controlsWrapper);
       };
 
-      class SocketMessge {
-        constructor(event, username, message) {
-          this.event = event;
-          this.username = username;
-          this.message = message;
-          this.id = Date.now();
-        }
-      }
-
-      const htmlMessage = (username, message, time) => {
+      const htmlMessage = (username = "", message, time) => {
         const wrapper = elemCreator("div", { cls: "messageWrapper" });
-        const text = elemCreator("span", { content: message });
-        const id = elemCreator("strong", {
-          content: (time || new Date()).toLocaleString() + username + ": ",
-          style: "color: #0078d7",
+        const timestamp = elemCreator("span", {
+          content: `[${(time || new Date()).toLocaleTimeString()}] `,
+          style: "font-weight: bold; color: gray;",
         });
+        const user = elemCreator("strong", {
+          content: username ? `${username}: ` : "",
+          style: "color: #0078d7;",
+        });
+        const text = elemCreator("span", { content: message });
 
-        wrapper.appendChild(id);
-        wrapper.appendChild(text);
+        appendChildren(wrapper, timestamp, user, text);
 
+        if (!username) {
+          wrapper.style = "color: red; font-style: italic";
+        }
         return wrapper;
       };
 
       const connect = (name) => {
-        chat.nameWrapper.remove();
+        if (!name.trim()) {
+          alert("Please enter a valid username!");
+          return;
+        }
         createUI();
+        chat.username = name.trim();
+        chat.nameWrapper.remove();
         chat.socket = new WebSocket(SERVER_URL);
-        chat.socket.onopen = () => {
-          const messageObject = new SocketMessge(
-            EVENTS.connect,
-            name,
-            "Connection established"
+        chat.socket.onopen = () => send(EVENTS.connect, chat.username);
+
+        chat.socket.onmessage = (e) => {
+          const { message, username, event, currentUsers } = JSON.parse(e.data);
+          if (event === EVENTS.connect || event === EVENTS.disconnect) {
+            chat.chatUsers.innerHTML = "";
+            currentUsers.forEach((user, idx) => {
+              if (idx === 0) {
+                chat.chatUsers.appendChild(
+                  elemCreator("div", {
+                    content: `Users count: ${currentUsers.length}`,
+                  })
+                );
+              }
+              chat.chatUsers.appendChild(elemCreator("div", { content: user }));
+            });
+          }
+
+          chat.chatWindow.appendChild(htmlMessage(username, message));
+          chat.chatWindow.scrollTop = chat.chatWindow.scrollHeight;
+        };
+
+        chat.socket.onerror = (error) => {
+          console.error("WebSocket error:", error);
+        };
+
+        chat.socket.onclose = () => {
+          console.warn("Connection closed. Please try reconnecting.");
+          chat.chatWindow.appendChild(
+            htmlMessage("", "Disconnected from the server.")
           );
-          chat.socket.send(JSON.stringify(messageObject));
         };
-
-        chat.socket.onmessage = (event) => {
-          const msg = JSON.parse(event.data);
-          const messageElement = document.createElement("div", {
-            content: msg,
-          });
-          messageElement.innerText = msg.msg;
-          chat.chatWindow.appendChild(messageElement);
-          console.log("New message!!!");
-        };
-
-        chat.socket.onclose = () => console.log("Connection closed!!!");
-        chat.socket.onerror = () => console.log("Error!!!");
       };
-
-      // sendBtn.addEventListener("click", () => {
-      //   const msg = {
-      //     event: "message",
-      //     username: "Alex",
-      //     id: Date.now(),
-      //     msg: messageInput.value,
-      //   };
-      //   socket.send(JSON.stringify(msg));
-      // });
-      // connctionBtn.addEventListener("click", connect);
 
       const init = () => {
         const nameWrapper = elemCreator("div");
