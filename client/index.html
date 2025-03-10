@@ -4,30 +4,241 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chat</title>
+    <style>
+      body {
+        background-color: #0019d7c7;
+        overflow: hidden;
+      }
+      header {
+        background-color: #0078d7;
+        color: white;
+        padding: 15px;
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      h1 {
+        margin: 0;
+      }
+      #wrapper {
+        width: 50%;
+        margin: 0 auto;
+        height: 100vh;
+        text-align: center;
+      }
+
+      .chat-wrapper {
+        display: flex;
+        justify-content: space-between;
+      }
+      #chat-window,
+      #chat-users {
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        height: 400px;
+        overflow-y: scroll;
+        padding: 10px;
+        width: 70%;
+      }
+      #chat-users {
+        width: 20%;
+      }
+
+      #chat-users h3 {
+        margin: 0;
+        text-align: left;
+      }
+      #send {
+        background-color: #0078d7;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        cursor: pointer;
+        border-radius: 5px;
+      }
+      .messageWrapper {
+        margin-bottom: 10px;
+        text-align: left;
+      }
+      input {
+        width: 80%;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+      button {
+        background-color: #0078d7;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        cursor: pointer;
+        border-radius: 5px;
+        transition: box-shadow 0.125s linear;
+        min-width: 100px;
+      }
+      button:hover {
+        /* transform: scale(1.1); */
+        box-shadow: inset 0 0 5px #fff;
+      }
+
+      button:active {
+        transform: translate(3px, 3px);
+      }
+      footer {
+        background-color: #ddd;
+        padding: 5px;
+        text-align: center;
+        position: fixed;
+        width: 100%;
+        bottom: 0;
+      }
+    </style>
   </head>
   <body>
-    <input id="messageInput" placeholder="Type a message" />
-    <button id="sendButton">Send</button>
-    <div id="messages"></div>
+    <div id="wrapper">
+      <header>
+        <h1>Welcome to Online Chat</h1>
+      </header>
+      <!-- <div class="chat-wrapper">
+        <div id="chat-window"></div>
+        <div id="chat-users"><h3>Users:</h3></div>
+      </div>
+      <div style="margin-top: 15px">
+        <input type="text" placeholder="Type your message..." />
+        <button id="send">Send</button>
+      </div> -->
+    </div>
+    <footer>
+      <p>© 2025 WebSocket Online Chat</p>
+    </footer>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-    <script>
-      const socket = io("http://localhost:3000");
+    <script type="module">
+      import { SERVER_URL, EVENTS } from "../constants/index.js";
 
-      const messageInput = document.getElementById("messageInput");
-      const sendButton = document.getElementById("sendButton");
-      const messagesDiv = document.getElementById("messages");
+      const chat = {
+        socket: null,
+        message: "",
+        chatWindow: null,
+        nameWrapper: null,
+      };
 
-      sendButton.addEventListener("click", () => {
-        const message = messageInput.value;
-        socket.emit("message", message);
-        messageInput.value = "";
-      });
+      const wrapper = document.getElementById("wrapper");
+      const elemCreator = (tag, options = {}) => {
+        const { id, cls, content, style } = options;
+        const element = document.createElement(tag);
 
-      socket.on("message", (msg) => {
-        const messageElement = document.createElement("div");
-        messageElement.textContent = msg;
-        messagesDiv.appendChild(messageElement);
-      });
+        if (content)
+          tag === "input"
+            ? (element.placeholder = content)
+            : (element.innerText = content);
+        if (cls) element.classList.add(cls);
+        if (id) element.id = id;
+        if (style) element.style = style;
+
+        return element;
+      };
+
+      const appendChildren = (parent, ...children) => {
+        children.forEach((child) => parent.appendChild(child));
+      };
+
+      const createUI = () => {
+        const chatWrapper = elemCreator("div", { cls: "chat-wrapper" });
+        const chatWindow = elemCreator("div", { id: "chat-window" });
+        chat.chatWindow = chatWindow;
+        const chatUsers = elemCreator("div", { id: "chat-users" });
+        const chatUsersTitle = elemCreator("h3", { content: "Users" });
+
+        const controlsWrapper = elemCreator("div", {
+          style: "margin-top: 15px",
+        });
+        const messageInput = elemCreator("input", { content: "Enter message" });
+        const sendBtn = elemCreator("button", { content: "SEND" });
+
+        chat.message = messageInput;
+        chat.sendButton = sendBtn;
+
+        chatUsers.appendChild(chatUsersTitle);
+
+        appendChildren(chatWrapper, chatWindow, chatUsers);
+        appendChildren(controlsWrapper, messageInput, sendBtn);
+        appendChildren(wrapper, chatWrapper, controlsWrapper);
+      };
+
+      class SocketMessge {
+        constructor(event, username, message) {
+          this.event = event;
+          this.username = username;
+          this.message = message;
+          this.id = Date.now();
+        }
+      }
+
+      const htmlMessage = (username, message, time) => {
+        const wrapper = elemCreator("div", { cls: "messageWrapper" });
+        const text = elemCreator("span", { content: message });
+        const id = elemCreator("strong", {
+          content: (time || new Date()).toLocaleString() + username + ": ",
+          style: "color: #0078d7",
+        });
+
+        wrapper.appendChild(id);
+        wrapper.appendChild(text);
+
+        return wrapper;
+      };
+
+      const connect = (name) => {
+        chat.nameWrapper.remove();
+        createUI();
+        chat.socket = new WebSocket(SERVER_URL);
+        chat.socket.onopen = () => {
+          const messageObject = new SocketMessge(
+            EVENTS.connect,
+            name,
+            "Connection established"
+          );
+          chat.socket.send(JSON.stringify(messageObject));
+        };
+
+        chat.socket.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          const messageElement = document.createElement("div", {
+            content: msg,
+          });
+          messageElement.innerText = msg.msg;
+          chat.chatWindow.appendChild(messageElement);
+          console.log("New message!!!");
+        };
+
+        chat.socket.onclose = () => console.log("Connection closed!!!");
+        chat.socket.onerror = () => console.log("Error!!!");
+      };
+
+      // sendBtn.addEventListener("click", () => {
+      //   const msg = {
+      //     event: "message",
+      //     username: "Alex",
+      //     id: Date.now(),
+      //     msg: messageInput.value,
+      //   };
+      //   socket.send(JSON.stringify(msg));
+      // });
+      // connctionBtn.addEventListener("click", connect);
+
+      const init = () => {
+        const nameWrapper = elemCreator("div");
+        const nameInput = elemCreator("input", { content: "Enter nickname" });
+        const connectBtn = elemCreator("button", { content: "Enter" });
+
+        connectBtn.addEventListener("click", () => connect(nameInput.value));
+
+        appendChildren(nameWrapper, nameInput, connectBtn);
+        chat.nameWrapper = nameWrapper;
+        wrapper.appendChild(nameWrapper);
+      };
+
+      init();
     </script>
   </body>
 </html>
